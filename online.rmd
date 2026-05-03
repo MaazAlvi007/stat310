@@ -9,11 +9,183 @@ output:
     vertical_layout: fill
 ---
 
-```{r libraries}
-library(flexdashboard) # UI
-library(stringr) 
+```{r import}
+library(arrow)
+path <- "~/Desktop/STAT310/final_project/stat310/data/exploration/clean_migration.csv"
+migration <- read_csv_arrow(path)
+dim(migration)
+encrypt <- read_csv("~/Desktop/STAT310/final_project/stat310/data/preprocessing/alphacode_country_lookup.csv")
+```
+
+```{r simple}
+library(shiny)
 library(dplyr)
 library(ggplot2)
-library(ggthemes)
-library(tidyverse)
+library(DT)
+library(plotly)
+
+# Add country names back to migration data
+names(migration)[names(migration) == ""] <- "unnamed_col"
+names(migration) <- make.names(names(migration), unique = TRUE)
+
+ui <- fluidPage(
+  titlePanel("Global Migration Patterns"),
+  sidebarLayout(
+    sidebarPanel(
+      # Origin filters
+      h4("Origin (From)"),
+      selectInput(
+        inputId = "filterTypeFrom",
+        label = "Filter by:",
+        choices = c("Country", "Region", "Continent")
+      ),
+      uiOutput("dynamicFromInput"),
+      
+      # Destination filters
+      h4("Destination (To)"),
+      selectInput(
+        inputId = "filterTypeTo",
+        label = "Filter by:",
+        choices = c("Country", "Region", "Continent")
+      ),
+      uiOutput("dynamicToInput"),
+      
+      # Month/Year slider
+      sliderInput(
+        inputId = "monthInput",
+        label = "Month Range",
+        min = 1,
+        max = 12,
+        value = c(1, 12),
+        step = 1
+      ),
+      sliderInput(
+        inputId = "yearInput",
+        label = "Year Range",
+        min = 2019,
+        max = 2022,
+        value = c(2019, 2020),
+        step = 1,
+        sep = "",
+        ticks = TRUE
+      )
+    ),
+    mainPanel(
+      plotlyOutput("migrationPlot", height = "500px"),
+      br(), br(),
+      DTOutput("results")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  
+  # Dynamic FROM dropdown based on filter type
+  output$dynamicFromInput <- renderUI({
+    choices <- switch(input$filterTypeFrom,
+      "Country" = sort(unique(na.omit(migration$country_from_name))),
+      "Region" = sort(unique(na.omit(migration$region_from))),
+      "Continent" = sort(unique(na.omit(migration$continent_from)))
+    )
+    
+    selectInput(
+      inputId = "fromInput",
+      label = paste("Select", input$filterTypeFrom),
+      choices = choices,
+      selected = choices[1]
+    )
+  })
+  
+  # Dynamic TO dropdown based on filter type
+  output$dynamicToInput <- renderUI({
+    choices <- switch(input$filterTypeTo,
+      "Country" = sort(unique(na.omit(migration$country_to_name))),
+      "Region" = sort(unique(na.omit(migration$region_to))),
+      "Continent" = sort(unique(na.omit(migration$continent_to)))
+    )
+    
+    selectInput(
+      inputId = "toInput",
+      label = paste("Select", input$filterTypeTo),
+      choices = choices,
+      selected = choices[1]
+    )
+  })
+  
+  # Filter data based on inputs
+  filtered_data <- reactive({
+    req(input$fromInput, input$toInput)
+    
+    # Determine which columns to filter on
+    from_col <- switch(input$filterTypeFrom,
+      "Country" = "country_from_name",
+      "Region" = "region_from",
+      "Continent" = "continent_from"
+    )
+    
+    to_col <- switch(input$filterTypeTo,
+      "Country" = "country_to_name",
+      "Region" = "region_to",
+      "Continent" = "continent_to"
+    )
+    
+    migration %>%
+      filter(
+        .data[[from_col]] == input$fromInput,
+        .data[[to_col]] == input$toInput,
+        migration_month >= input$monthInput[1],
+        migration_month <= input$monthInput[2],
+        migration_year >= input$yearInput[1],
+        migration_year <= input$yearInput[2]
+      )
+  })
+  
+  # Aggregated data for plotting
+  plot_data <- reactive({
+    filtered_data() %>%
+      group_by(migration_year, migration_month) %>%
+      summarise(total_migrants = sum(num_migrants, na.rm = TRUE), .groups = "drop") %>%
+      mutate(date = as.Date(paste(migration_year, migration_month, "01", sep = "-")))
+  })
+  
+  # Plot
+  output$migrationPlot <- renderPlotly({
+    data <- plot_data()
+    
+    if(nrow(data) == 0) {
+      return(plotly_empty())
+    }
+    
+    p <- ggplot(data, aes(x = date, y = total_migrants)) +
+      geom_line(color = "steelblue", linewidth = 1.2) +
+      geom_point(color = "steelblue", size = 3) +
+      labs(
+        title = paste("Migration from", input$fromInput, "to", input$toInput),
+        x = "Date",
+        y = "Number of Migrants"
+      ) +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 11),
+        axis.title = element_text(size = 12)
+      ) +
+      scale_y_continuous(labels = scales::comma)
+    
+    ggplotly(p) %>%
+      layout(hovermode = "x unified")
+  })
+  
+  # Data table
+  output$results <- renderDT({
+    filtered_data() %>%
+      select(migration_year, migration_month, num_migrants, 
+             country_from_name, country_to_name, 
+             region_from, region_to) %>%
+      arrange(migration_year, migration_month)
+  })
+}
+
+shinyApp(ui, server)
 ```
+
