@@ -17,6 +17,78 @@ dim(migration)
 encrypt <- read_csv("~/Desktop/STAT310/final_project/stat310/data/preprocessing/alphacode_country_lookup.csv")
 ```
 
+```{r loading the WDI library}
+library(WDI)
+library(dplyr)
+
+wb_data <- WDI(
+  country = "all",
+  indicator = c(
+    population = "SP.POP.TOTL",
+    gdp = "NY.GDP.PCAP.KD",
+    life_exp = "SP.DYN.LE00.IN"
+  ),
+  start = 2019,
+  end = 2022,
+  extra = TRUE
+)
+
+wb_clean <- wb_data %>%
+  transmute(
+    country_code = iso2c,
+    migration_year = year,
+    population = population,
+    gdp = gdp,
+    life_exp = life_exp
+  )
+
+write_parquet(wb_clean, "wb_clean.parquet")
+wb_clean <- read_parquet("wb_clean.parquet")
+
+# Trouble shooting
+names(migration)[is.na(names(migration)) | names(migration) == ""] <- "unnamed_col"
+names(migration) <- make.names(names(migration), unique = TRUE)
+
+migration <- migration %>%
+  left_join(
+    wb_clean,
+    by = c("country_from_alpha_code" = "country_code",
+           "migration_year" = "migration_year")
+  ) %>%
+  left_join(
+    wb_clean %>%
+      rename(
+        country_to_alpha_code = country_code,
+        gdp_to = gdp,
+        population_to = population,
+        life_exp_to = life_exp
+      ),
+    by = c("country_to_alpha_code" = "country_to_alpha_code",
+           "migration_year" = "migration_year")) %>%
+  mutate(migration_gap_gdp = gdp_to - gdp,
+         life_exp_gap = life_exp_to - life_exp,
+         pop_gap = population_to - population)
+
+migration <- migration %>%
+  rename(
+    gdp_from = gdp,
+    life_exp_from = life_exp,
+    population_from = population
+  )
+
+# Continent data
+
+region_data <- migration %>%
+  group_by(region_from, migration_year) %>%
+  summarize(
+    total_migrants = sum(num_migrants, na.rm = TRUE),
+    avg_gdp_from = mean(gdp_from, na.rm = TRUE),
+    avg_life_exp_from = mean(life_exp_from, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+```
+
 ```{r simple}
 library(shiny)
 library(dplyr)
@@ -68,12 +140,25 @@ ui <- fluidPage(
         step = 1,
         sep = "",
         ticks = TRUE
+      ),
+      checkboxInput(
+        "perCapita", 
+        "Show per capita migration", 
+        FALSE
       )
     ),
     mainPanel(
       plotlyOutput("migrationPlot", height = "500px"),
       br(), br(),
-      DTOutput("results")
+      plotlyOutput("gdpPlot", height = "400px"),
+      br(), br(),
+      plotlyOutput("lifeExpPlot", height = "400px"),
+      br(), br(),
+      DTOutput("results"),
+      br(), br(),
+      plotlyOutput("continentGdpPlot", height = "400px"),
+      br(), br(),
+      plotlyOutput("continentLifeExpPlot", height = "400px"),
     )
   )
 )
@@ -142,13 +227,22 @@ server <- function(input, output, session) {
   
   # Aggregated data for plotting
   plot_data <- reactive({
-    filtered_data() %>%
+    df <- filtered_data() %>%
       group_by(migration_year, migration_month) %>%
-      summarise(total_migrants = sum(num_migrants, na.rm = TRUE), .groups = "drop") %>%
+      summarise(
+        total_migrants = sum(num_migrants, na.rm = TRUE),
+        avg_population = mean(population, na.rm = TRUE),
+        .groups = "drop") %>%
       mutate(date = as.Date(paste(migration_year, migration_month, "01", sep = "-")))
+    
+    if (input$perCapita) {
+      df <- df %>%
+        mutate(total_migrants = total_migrants / (avg_population + 1) * 1e6)
+    }
+    df
   })
   
-  # Plot
+  # Migrants Trend
   output$migrationPlot <- renderPlotly({
     data <- plot_data()
     
@@ -165,27 +259,174 @@ server <- function(input, output, session) {
         y = "Number of Migrants"
       ) +
       theme_minimal() +
-      theme(
-        plot.title = element_text(size = 14, face = "bold"),
-        axis.text = element_text(size = 11),
-        axis.title = element_text(size = 12)
-      ) +
       scale_y_continuous(labels = scales::comma)
     
-    ggplotly(p) %>%
-      layout(hovermode = "x unified")
+    ggplotly(p)
   })
   
-  # Data table
+  # Migration vs. GDP Plot
+  output$gdpPlot <- renderPlotly({
+    df <- filtered_data()
+    
+    if(nrow(df) == 0) return(plotly_empty())
+    
+    p <- ggplot(df, aes(x = gdp_from, y = num_migrants)) +
+      geom_point(alpha = 0.6) +
+      geom_smooth(method = "lm", se = FALSE) +
+      labs(
+        title = "Migration vs GDP (Origin Country)",
+        x = "GDP per Capita",
+        y = "Migrants"
+      ) +
+    theme_minimal() 
+        ggplotly(p)
+  })
+  
+  # Life Exp Plot
+  output$lifeExpPlot <- renderPlotly({
+  df <- filtered_data()
+  
+  if(nrow(df) == 0) return(plotly_empty())
+  
+  p <- ggplot(df, aes(x = life_exp_from, y = num_migrants)) +
+    geom_point(alpha = 0.6) +
+    geom_smooth(method = "lm", se = FALSE) +
+    labs(
+      title = "Migration vs Life Expectancy (Origin Country)",
+      x = "Life Expectancy",
+      y = "Migrants"
+    ) +
+    theme_minimal()
+  
+  ggplotly(p)
+})
+  
+   # Data table
   output$results <- renderDT({
     filtered_data() %>%
-      select(migration_year, migration_month, num_migrants, 
-             country_from_name, country_to_name, 
-             region_from, region_to) %>%
+      select(
+        migration_year, 
+        migration_month, 
+        num_migrants, 
+        country_from_name, 
+        country_to_name,
+        region_from, 
+        region_to, 
+        gdp_from, 
+        migration_gap_gdp, 
+        life_exp_from, 
+        life_exp_gap,
+        population_from,
+        population_to) %>%
       arrange(migration_year, migration_month)
   })
+  continent_data <- reactive({
+    migration %>%
+      group_by(continent_from, migration_year) %>%
+      summarize(
+        total_migrants = sum(num_migrants, na.rm = TRUE),
+        avg_gdp_from = mean(gdp_from, na.rm = TRUE),
+        avg_life_exp_from = mean(life_exp_from, na.rm = TRUE),
+        .groups = "drop"
+      )
+  }) 
+  
+     output$continentLifeExpPlot <- renderPlotly({
+      df <- continent_data()
+      
+      if(nrow(df) == 0) return(plotly_empty())
+      
+      p <- ggplot(df, aes(x = avg_life_exp_from, y = total_migrants)) +
+        geom_point(alpha = 0.7) +
+        geom_smooth(method = "lm", se = FALSE) +
+        labs(
+          title = "Migration vs Life Expectancy (Continent Level)",
+          x = "Average Life Expectancy",
+          y = "Total Migrants"
+        ) +
+        theme_minimal()
+      ggplotly(p)
+    })
+  
+  output$continentGdpPlot <- renderPlotly({
+    df <- continent_data()
+    
+    if(nrow(df) == 0) return(plotly_empty())
+       
+       p <- ggplot(df, aes(x = avg_gdp_from, y = total_migrants)) +
+         geom_point(alpha = 0.6) +
+         geom_smooth(method = "lm", se = FALSE) +
+         labs(
+           title = "Migration vs. GDP (Continent Level)",
+           x = "Average GDP per Capita",
+           y = "Total Migrants"
+         ) + 
+         theme_minimal()
+       
+       ggplotly(p)
+})
 }
 
 shinyApp(ui, server)
 ```
+
+# Some Analyses
+```{r}
+# Do people move towards richer countries?
+cor(migration$num_migrants, migration$gdp_to, use = "complete.obs")  # r-squared = 0.04015468
+cor(migration$num_migrants, migration$gdp_from, use = "complete.obs") # r-suqared = 0.00589419
+
+#DO people move thorugh healhier countires?
+cor(migration$num_migrants, migration$life_exp_to, use = "complete.obs") # 0.03717863
+cor(migration$num_migrants, migration$life_exp_from, use = "complete.obs") # 0.02206183
+
+# Does the gdp gap matter?
+cor(migration$num_migrants, migration$gdp_to - migration$gdp_from, use = "complete.obs") # 0.0245025
+
+# GDP relationship
+ggplot(migration, aes(x = gdp_to, y = num_migrants)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm") +
+  theme_minimal()
+
+# Life expectancy relationship
+ggplot(migration, aes(x = life_exp_to, y = num_migrants)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm") +
+  theme_minimal()
+
+# GDP Gap
+ggplot(migration, aes(x = gdp_to - gdp_from, y = num_migrants)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm") +
+  theme_minimal()
+
+# By continent
+migration %>%
+  group_by(continent_from) %>%
+  summarise(
+    avg_migrants = mean(num_migrants, na.rm = TRUE),
+    avg_gdp_gap = mean(gdp_to - gdp_from, na.rm = TRUE)
+  )
+
+# By region
+migration %>%
+  group_by(region_from) %>%
+  summarise(
+    avg_migrants = mean(num_migrants, na.rm = TRUE),
+    avg_life_gap = mean(life_exp_to - life_exp_from, na.rm = TRUE)
+  )
+
+
+# What matters?
+model <- lm(
+  num_migrants ~ gdp_from + gdp_to + life_exp_from + life_exp_to,
+  data = migration
+)
+
+summary(model)
+
+
+```
+
 
