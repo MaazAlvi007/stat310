@@ -8,7 +8,7 @@ library(dplyr)
 ```
 
 ```{r importing data and lookup setup}
-setwd("~/Desktop/STAT310/final_project/data/preprocessing")
+setwd("~/Desktop/STAT310/final_project/stat310/data/preprocessing")
 migration_dirty <- read.csv("meta_migration_data.csv", stringsAsFactors = FALSE) # Facebook/Meta data
 codes <- read.csv("alphacodes.csv", stringsAsFactors = FALSE) # Data frame with alpha codes and names
 
@@ -113,6 +113,7 @@ encrypt$continent <- continent_lookup[encrypt$alpha2]
 
 ```{r regional names preprocessing}
 # Creating regions for dashboard
+setwd("~/Desktop/STAT310/final_project/stat310/data/preprocessing")
 regional <- read_csv("regional.csv")
 # Replaces CSV . with spaces 
 names(regional) <- gsub("[\\.]", " ", names(regional)) # gsub() applies sub() multiple times
@@ -152,12 +153,19 @@ migration_dirty$continent_to   <- continent_lookup[migration_dirty$country_to]
 # regions (IMPORTANT FIX: use name columns AFTER creating them)
 migration_dirty$region_from <- region_lookup[migration_dirty$country_from_name]
 migration_dirty$region_to   <- region_lookup[migration_dirty$country_to_name]
+```
+
+```{r changing dates}
+# migration_dirty$migration_month <- sub(pattern = "-", replacement = " ", x = migration_dirty$migration_month)
+migration_dirty$migration_year <- substr(migration_dirty$migration_month, 1,4)
+migration_dirty$migration_month <- substr(migration_dirty$migration_month, nchar(migration_dirty$migration_month) - 1, nchar(migration_dirty$migration_month))
 
 # reorder col names
 migration_dirty <- migration_dirty[, c(
   "country_from_name",
   "country_to_name",
   "migration_month",
+  "migration_year",
   "num_migrants",
   "country_from",
   "country_to",
@@ -167,8 +175,18 @@ migration_dirty <- migration_dirty[, c(
   "continent_to"
 )]
 
-# write.csv(migration_dirty, "clean_migration.csv")
+# migration codes
+colnames(migration_dirty)[6] <- "country_from_alpha_code"
+colnames(migration_dirty)[7] <- "country_to_alpha_code"
+
+# test: View(head(migration_dirty))
+
+setwd("~/Desktop/STAT310/final_project/stat310/data/exploration")
+write.csv(migration_dirty, "clean_migration.csv")
 ```
+
+
+
 
 ```{r missing values from original data}
 # View all rows where country_from is NA
