@@ -1,0 +1,19 @@
+---
+title: "Migration home"
+runtime: shiny # Allows us to embed shiny into our dashboard
+output:
+  flexdashboard::flex_dashboard:
+    css: styles.css
+    orientation: columns
+    theme: readable
+    vertical_layout: fill
+---
+
+```{r libraries}
+library(flexdashboard) # UI
+library(stringr) 
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+library(tidyverse)
+```

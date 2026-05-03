@@ -1,0 +1,226 @@
+---
+title: "Migration preprocessing for 5hrs lol"
+---
+
+```{r libraries}
+library(tidyr)
+library(dplyr)
+```
+
+```{r importing data and lookup setup}
+setwd("~/Desktop/STAT310/final_project/data/preprocessing")
+migration_dirty <- read.csv("meta_migration_data.csv", stringsAsFactors = FALSE) # Facebook/Meta data
+codes <- read.csv("alphacodes.csv", stringsAsFactors = FALSE) # Data frame with alpha codes and names
+
+codes$alpha2 <- toupper(codes$alpha2) # Uppercase
+encrypt <- codes[,c("alpha2", "en")] # New look up data frame of just alpha codes and country names
+```
+
+```{r fixing up country names}
+# add missing countries manually to encrypt
+missing_countries <- data.frame(
+  alpha2 = c("HK", "MO", "TW", "XK"),
+  en = c("Hong Kong", "Macao", "Taiwan", "Kosovo"),
+  stringsAsFactors = FALSE
+)
+
+# Clean look up table
+encrypt <- rbind(
+  codes[, c("alpha2", "en")],
+  missing_countries
+)
+
+# Fixing names
+encrypt$en[encrypt$en == "Viet Nam"] <- "Vietnam"
+encrypt$en[encrypt$en == "Türkiye"] <- "Turkey"
+encrypt$en[encrypt$en == "Russian Federation"] <- "Russia"
+encrypt$en[encrypt$en == "United Kingdom of Great Britain and Northern Ireland"] <- "United Kingdom"
+encrypt$en[encrypt$en == "Venezuela, Bolivarian Republic of"] <- "Venezuela"
+encrypt$en[encrypt$en == "Bolivia, Plurinational State of"] <- "Bolivia"
+encrypt$en[encrypt$en == "Iran (Islamic Republic of)"] <- "Iran"
+encrypt$en[encrypt$en == "Korea, Republic of"] <- "South Korea"
+encrypt$en[encrypt$en == "Lao People's Democratic Republic"] <- "Laos"
+encrypt$en[encrypt$en == "Syrian Arab Republic"] <- "Syria"
+encrypt$en[encrypt$en == "Tanzania, United Republic of"] <- "Tanzania"
+encrypt$en[encrypt$en == "Congo, Democratic Republic of the"] <- "Democratic Republic of the Congo"
+encrypt$en[encrypt$en == "Congo"] <- "Republic of the Congo"
+encrypt$en[encrypt$en == "Moldova, Republic of"] <- "Moldova"
+encrypt$en[encrypt$en == "Brunei Darussalam"] <- "Brunei"
+encrypt$en[encrypt$en == "Bahamas"] <- "The Bahamas"
+encrypt$en[encrypt$en == "Gambia"] <- "The Gambia"
+encrypt$en[encrypt$en ==  "Micronesia, Federated States of"] <- "Micronesia"
+```
+
+```{r add continents}
+# Base continent map
+continent_map <- data.frame(
+  alpha2 = c("AF","AL","DZ","AD","AO","AG","AR","AM","AU","AT","AZ","BS","BH","BD","BB","BY","BE","BZ","BJ","BT",
+             "BO","BA","BW","BR","BN","BG","BF","BI","KH","CM","CA","CV","CF","TD","CL","CN","CO","KM","CG","CD",
+             "CR","CI","HR","CU","CY","CZ","DK","DJ","DM","DO","EC","EG","SV","GQ","ER","EE","ET","FJ","FI","FR",
+             "GA","GM","GE","DE","GH","GR","GD","GT","GN","GW","GY","HT","HN","HU","IS","IN","ID","IR","IQ","IE",
+             "IL","IT","JM","JP","JO","KZ","KE","KI","KP","KR","KW","KG","LA","LV","LB","LS","LR","LY","LI","LT",
+             "LU","MK","MG","MW","MY","MV","ML","MT","MH","MR","MU","MX","FM","MA","MD","MC","MN","ME","MZ","MM",
+             "NA","NR","NP","NL","NZ","NI","NE","NG","NO","OM","PK","PW","PA","PG","PY","PE","PH","PL","PT","QA",
+             "RO","RU","RW","KN","LC","VC","WS","SM","ST","SA","SN","RS","SC","SL","SG","SK","SI","SB","SO","ZA",
+             "SS","ES","LK","SD","SR","SZ","SE","CH","SY","TJ","TZ","TH","TL","TG","TO","TT","TN","TR","TM","TV",
+             "UG","UA","AE","GB","US","UY","UZ","VU","VE","VN","YE","ZM","ZW","HK","MO","TW","XK"),
+  continent = NA_character_
+)
+
+# North America
+continent_map$continent[continent_map$alpha2 %in% c(
+  "US","CA","MX","CR","PA","GT","HN","SV","GD","DM","NI","BZ","CU","DO","JM","HT","TT","BB","BS","AG","LC","VC","KN"
+)] <- "North America"
+
+# South America
+continent_map$continent[continent_map$alpha2 %in% c(
+  "BR","AR","CL","CO","PE","VE","UY","PY","BO","GY","SR","EC"
+)] <- "South America"
+
+# Asia
+continent_map$continent[continent_map$alpha2 %in% c(
+  "CN","JP","KR","IN","PK","BD","TH","VN","MY","SG","ID","PH","IR","IQ","SA","AE","IL","JO","LB","LA",
+  "MM","KH","MN","NP","BN","LK","BT","AF","KW","BH","OM","QA","YE","KP","TM","UZ","TJ","KG","KZ","AM","SY","AZ","GE","TR","HK","MO","TW"
+)] <- "Asia"
+
+# Europe
+continent_map$continent[continent_map$alpha2 %in% c(
+  "DE","FR","IT","ES","GB","PT","NL","BE","SE","NO","DK","FI","PL","CZ","SK","HU","AT","CH","GR","RO","BG",
+  "UA","RU","BY","RS","HR","BA","SI","ME","MK","AL","LT","IE","LV","EE","MD","MC","IS","LU","MT","CY","SM","AD","LI","XK"
+)] <- "Europe"
+
+# Africa
+continent_map$continent[continent_map$alpha2 %in% c(
+  "NG","EG","ZA","KE","ET","GH","MV","MW","LY","TZ","UG","DZ","MA","TN","SD","SS","AO","CM","CI","SN","MZ","ZW","ZM","BW","NA","MG","ML","MU","BF","NE","TD","SO","TG","ER","BJ","GD","CG","CD","CF","DJ","GN","RW","BI","LR","SL","GM","GA","GQ","GW","CV","ST","SC","MR","LS","SZ","KM"
+)] <- "Africa"
+
+# Oceania
+continent_map$continent[continent_map$alpha2 %in% c(
+  "AU","NZ","FJ","PG","SB","VU","WS","TO","KI","NR","TV","MH","FM","PW","TL"
+)] <- "Oceania"
+
+# Checks for missing countries
+# missing <- encrypt[is.na(encrypt$continent), c("alpha2", "en")]
+
+# Setnames() sets names on objects and returns the object . . . no middle man
+continent_lookup <- setNames(continent_map$continent, continent_map$alpha2) 
+encrypt$continent <- continent_lookup[encrypt$alpha2]
+
+# Save it
+# write.csv(encrypt, "alphacode_country_lookup.csv")
+```
+
+
+```{r regional names preprocessing}
+# Creating regions for dashboard
+regional <- read_csv("regional.csv")
+# Replaces CSV . with spaces 
+names(regional) <- gsub("[\\.]", " ", names(regional)) # gsub() applies sub() multiple times
+
+# Wide to Long Data! 
+long_regions <- bind_rows(
+  lapply(names(regional), function(r) { # Loop column names and pull it out
+    countries <- regional[[r]]
+    countries <- countries[!is.na(countries) & trimws(countries) != ""] # NA/blank spaces removal
+    data.frame(
+      country = countries,
+      region = r,
+      stringsAsFactors = FALSE
+    )
+  })
+)
+
+# trouble shooting check for missing countries:
+# unmatched_from <- migration_dirty[is.na(migration_dirty$region), ]
+# unique(unmatched_from$country_from_name)
+```
+
+```{r adding country names to migration set}
+# lookup vectors
+name_lookup <- setNames(encrypt$en, encrypt$alpha2)
+continent_lookup <- setNames(encrypt$continent, encrypt$alpha2)
+region_lookup <- setNames(long_regions$region, long_regions$country)
+
+# country names
+migration_dirty$country_from_name <- name_lookup[migration_dirty$country_from]
+migration_dirty$country_to_name   <- name_lookup[migration_dirty$country_to]
+
+# continents
+migration_dirty$continent_from <- continent_lookup[migration_dirty$country_from]
+migration_dirty$continent_to   <- continent_lookup[migration_dirty$country_to]
+
+# regions (IMPORTANT FIX: use name columns AFTER creating them)
+migration_dirty$region_from <- region_lookup[migration_dirty$country_from_name]
+migration_dirty$region_to   <- region_lookup[migration_dirty$country_to_name]
+
+# reorder col names
+migration_dirty <- migration_dirty[, c(
+  "country_from_name",
+  "country_to_name",
+  "migration_month",
+  "num_migrants",
+  "country_from",
+  "country_to",
+  "region_from",
+  "region_to", 
+  "continent_from",
+  "continent_to"
+)]
+
+# write.csv(migration_dirty, "clean_migration.csv")
+```
+
+```{r missing values from original data}
+# View all rows where country_from is NA
+migration_dirty %>%
+  filter(is.na(country_from)) %>%
+  View()  # Opens in RStudio viewer
+
+# Or to see in console
+migration_dirty %>%
+  filter(is.na(country_from))
+
+# Get a count
+migration_dirty %>%
+  filter(is.na(country_from)) %>%
+  nrow()
+
+# See summary statistics
+migration_dirty %>%
+  filter(is.na(country_from)) %>%
+  summary()
+
+# Check how many NA values in each country column
+sum(is.na(migration_dirty$country_from))
+sum(is.na(migration_dirty$country_to))
+
+# See which destinations these NA origins are going to
+migration_dirty %>%
+  filter(is.na(country_from)) %>%
+  count(country_to, sort = TRUE)
+
+# See the time range of these NA records
+migration_dirty %>%
+  filter(is.na(country_from)) %>%
+  summarise(
+    first_month = min(migration_month),
+    last_month = max(migration_month),
+    total_migrants = sum(num_migrants, na.rm = TRUE)
+  )
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
