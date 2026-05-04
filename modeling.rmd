@@ -1,0 +1,46 @@
+```{r}
+library(arrow)
+path <- "~/Desktop/STAT310/final_project/stat310/data/migration_wdi.csv"
+migration <- read_csv_arrow(path)
+dim(migration)
+```
+
+```{r create the british empire}
+# Introducing a tribble . . . 
+# data can be entered column by column!
+# good for small data frames
+
+british_empire_pairs <- tribble(
+  ~country_from_alpha_code, ~country_to_alpha_code,
+  "IND", "GBR",
+  "PAK", "GBR",
+  "BGD", "GBR",
+  "NGA", "GBR",
+  "GHA", "GBR",
+  "KEN", "GBR",
+  "ZAF", "GBR",
+  "ZWE", "GBR",
+  "JAM", "GBR",
+  "TTO", "GBR",
+  "BRB", "GBR",
+  "CYP", "GBR",
+  "MLT", "GBR",
+  "AUS", "GBR",
+  "NZL", "GBR",
+  "CAN", "GBR",
+  "SGP", "GBR",
+  "MYS", "GBR",
+  "HKG", "GBR",
+  "IRE", "GBR",   # Noted
+  "UGA", "GBR",
+  "TZA", "GBR",
+  "ZMB", "GBR",
+  "MWI", "GBR",
+  "SLE", "GBR",
+  "GUY", "GBR",
+  "MMR", "GBR",   # Noted
+  "SDN", "GBR"
+) |>
+  mutate(british_empire = 1L)
+```
+

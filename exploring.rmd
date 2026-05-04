@@ -87,9 +87,11 @@ region_data <- migration %>%
     .groups = "drop"
   )
 
+write.csv(migration, "migration_wdi.csv")
+
 ```
 
-```{r simple}
+```{r servers}
 library(shiny)
 library(dplyr)
 library(ggplot2)
@@ -371,62 +373,63 @@ shinyApp(ui, server)
 ```
 
 # Some Analyses
-```{r}
+```{r basic questions}
 # Do people move towards richer countries?
 cor(migration$num_migrants, migration$gdp_to, use = "complete.obs")  # r-squared = 0.04015468
-cor(migration$num_migrants, migration$gdp_from, use = "complete.obs") # r-suqared = 0.00589419
+cor(migration$num_migrants, migration$gdp_from, use = "complete.obs") # r-squared = 0.00589419
 
-#DO people move thorugh healhier countires?
+# Do people move to healthier countries?
 cor(migration$num_migrants, migration$life_exp_to, use = "complete.obs") # 0.03717863
 cor(migration$num_migrants, migration$life_exp_from, use = "complete.obs") # 0.02206183
 
 # Does the gdp gap matter?
 cor(migration$num_migrants, migration$gdp_to - migration$gdp_from, use = "complete.obs") # 0.0245025
+```
 
-# GDP relationship
-ggplot(migration, aes(x = gdp_to, y = num_migrants)) +
-  geom_point(alpha = 0.4) +
-  geom_smooth(method = "lm") +
-  theme_minimal()
-
-# Life expectancy relationship
-ggplot(migration, aes(x = life_exp_to, y = num_migrants)) +
-  geom_point(alpha = 0.4) +
-  geom_smooth(method = "lm") +
-  theme_minimal()
-
-# GDP Gap
-ggplot(migration, aes(x = gdp_to - gdp_from, y = num_migrants)) +
-  geom_point(alpha = 0.4) +
-  geom_smooth(method = "lm") +
-  theme_minimal()
-
-# By continent
-migration %>%
-  group_by(continent_from) %>%
-  summarise(
-    avg_migrants = mean(num_migrants, na.rm = TRUE),
-    avg_gdp_gap = mean(gdp_to - gdp_from, na.rm = TRUE)
+```{r does gdp gap and life_exp_gap make a differnce}
+migration <- migration %>%
+  mutate(
+    gdp_gap = gdp_to - gdp_from,
+    life_exp_gap = life_exp_to - life_exp_from
   )
 
-# By region
-migration %>%
-  group_by(region_from) %>%
-  summarise(
-    avg_migrants = mean(num_migrants, na.rm = TRUE),
-    avg_life_gap = mean(life_exp_to - life_exp_from, na.rm = TRUE)
-  )
-
-
-# What matters?
-model <- lm(
-  num_migrants ~ gdp_from + gdp_to + life_exp_from + life_exp_to,
-  data = migration
-)
+model <- lm(num_migrants ~ gdp_gap + life_exp_gap, data = migration)
 
 summary(model)
 
+# gdp_gap p < 2e-16
+# life exp_gap p < 2e-6
+# overall p is small
 
+# R-squared = 0.0065
+
+# 1.032e-03 gdp slope means +1000 GDP -> +1 migrant
+# -0.8206 age slope means a higher life expectancy gap -> lower migration
+```
+
+```{r}
+# Simple Gravity Model found in economics
+migration <- migration %>%
+  mutate(log_migrants = log1p(num_migrants))
+
+
+# For all populations moving from and to
+gravity_model <- lm(
+  log_migrants ~ 
+    log1p(population_from) + 
+    log1p(population_to) +
+    gdp_gap +
+    life_exp_gap,
+  data = migration
+)
+
+summary(gravity_model)
+
+# The slopes of the population are about the same ~ 0.29 and that means
+# large origin countries mean there is more outflow pressure
+# Large designation countries there is a lot if inflow pressure
+
+# I will use the gravity model of migration
 ```
 
 
